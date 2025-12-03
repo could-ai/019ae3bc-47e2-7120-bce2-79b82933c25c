@@ -1,123 +1,154 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:telephony/telephony.dart';
+import 'package:flutter_notification_listener/flutter_notification_listener.dart';
+import 'data/database_helper.dart';
+import 'models/payment_event.dart';
+import 'services/background_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize WorkManager
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: true, // Set to false in production
+  );
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      debugShowCheckedModeBanner: false,
+      title: 'AutoVerify',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => const MyHomePage(title: 'Flutter Demo Home Page'),
+        '/': (context) => const HomeScreen(),
       },
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomeScreenState extends State<HomeScreen> {
+  final Telephony telephony = Telephony.instance;
+  List<PaymentEvent> _events = [];
+  bool _isLoading = true;
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    _loadEvents();
+    _requestPermissions();
+    _initListeners();
+  }
+
+  Future<void> _loadEvents() async {
+    final events = await DatabaseHelper.instance.getAllEvents();
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _events = events;
+      _isLoading = false;
     });
+  }
+
+  Future<void> _requestPermissions() async {
+    await [
+      Permission.sms,
+      Permission.notification,
+    ].request();
+  }
+
+  Future<void> _initListeners() async {
+    // SMS Listener
+    telephony.listenIncomingSms(
+      onNewMessage: (SmsMessage message) {
+        // Foreground handler
+        onSmsReceived(message);
+        _loadEvents(); // Refresh UI
+      },
+      onBackgroundMessage: onSmsReceived,
+    );
+
+    // Notification Listener
+    try {
+      final bool? isPermissionGranted = await FlutterNotificationListener.isPermissionGranted;
+      if (isPermissionGranted != true) {
+        // We can't force this, user must enable it manually via settings
+        debugPrint("Notification Listener permission not granted");
+      } else {
+        FlutterNotificationListener.registerGlobalServiceCallback(onNotificationReceived);
+      }
+    } catch (e) {
+      debugPrint("Error initializing notification listener: $e");
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    await FlutterNotificationListener.openPermissionSettings();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('AutoVerify Events'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadEvents,
+          )
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text('$_counter', style: Theme.of(context).textTheme.headlineMedium),
-          ],
-        ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton.icon(
+              onPressed: _openNotificationSettings,
+              icon: const Icon(Icons.settings),
+              label: const Text('Enable Notification Access'),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    itemCount: _events.length,
+                    itemBuilder: (context, index) {
+                      final event = _events[index];
+                      return ListTile(
+                        leading: Icon(
+                          event.provider == 'bkash' ? Icons.payment :
+                          event.provider == 'nagad' ? Icons.account_balance_wallet :
+                          Icons.message,
+                          color: event.status == 'uploaded' ? Colors.green : Colors.orange,
+                        ),
+                        title: Text('${event.provider.toUpperCase()} - ${event.parsedAmount ?? "N/A"}'),
+                        subtitle: Text('Trx: ${event.parsedTrx ?? "N/A"}\n${event.sender}'),
+                        trailing: Text(event.status),
+                        isThreeLine: true,
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
