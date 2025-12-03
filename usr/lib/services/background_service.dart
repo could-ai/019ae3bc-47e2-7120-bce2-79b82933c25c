@@ -1,4 +1,4 @@
-import 'package:workmanager/workmanager.dart';
+import 'package:workmanager/workmanager.dart' as wm;
 import 'package:telephony/telephony.dart';
 import 'package:flutter_notification_listener/flutter_notification_listener.dart';
 import 'package:logger/logger.dart';
@@ -9,8 +9,8 @@ import '../utils/payment_parser.dart';
 const String taskName = 'uploadEventsTask';
 
 @pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
+void appCallbackDispatcher() {
+  wm.Workmanager().executeTask((task, inputData) async {
     final logger = Logger();
     logger.i('Background task started: $task');
 
@@ -50,11 +50,11 @@ void onSmsReceived(SmsMessage message) async {
     logger.i('Payment Event saved: ${event.parsedTrx}');
     
     // Trigger immediate upload attempt
-    Workmanager().registerOneOffTask(
+    wm.Workmanager().registerOneOffTask(
       'immediate_upload_${event.id}',
       taskName,
-      constraints: Constraints(
-        networkType: NetworkType.connected,
+      constraints: wm.Constraints(
+        networkType: wm.NetworkType.connected,
       ),
     );
   }
@@ -77,11 +77,11 @@ void onNotificationReceived(NotificationEvent evt) async {
     await DatabaseHelper.instance.insertEvent(event);
     logger.i('Notification Payment Event saved: ${event.parsedTrx}');
     
-    Workmanager().registerOneOffTask(
+    wm.Workmanager().registerOneOffTask(
       'immediate_upload_notif_${event.id}',
       taskName,
-      constraints: Constraints(
-        networkType: NetworkType.connected,
+      constraints: wm.Constraints(
+        networkType: wm.NetworkType.connected,
       ),
     );
   }

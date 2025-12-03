@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:telephony/telephony.dart';
-import 'package:flutter_notification_listener/flutter_notification_listener.dart';
+import 'package:flutter_notification_listener/flutter_notification_listener.dart' as fnl;
 import 'data/database_helper.dart';
 import 'models/payment_event.dart';
-import 'services/background_service.dart';
+import 'services/background_service.dart' as bg;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize WorkManager
   await Workmanager().initialize(
-    callbackDispatcher,
+    bg.appCallbackDispatcher,
     isInDebugMode: true, // Set to false in production
   );
 
@@ -79,20 +78,20 @@ class _HomeScreenState extends State<HomeScreen> {
     telephony.listenIncomingSms(
       onNewMessage: (SmsMessage message) {
         // Foreground handler
-        onSmsReceived(message);
+        bg.onSmsReceived(message);
         _loadEvents(); // Refresh UI
       },
-      onBackgroundMessage: onSmsReceived,
+      onBackgroundMessage: bg.onSmsReceived,
     );
 
     // Notification Listener
     try {
-      final bool? isPermissionGranted = await FlutterNotificationListener.isPermissionGranted;
+      final bool? isPermissionGranted = await fnl.FlutterNotificationListener.isPermissionGranted;
       if (isPermissionGranted != true) {
         // We can't force this, user must enable it manually via settings
         debugPrint("Notification Listener permission not granted");
       } else {
-        FlutterNotificationListener.registerGlobalServiceCallback(onNotificationReceived);
+        fnl.FlutterNotificationListener.registerGlobalServiceCallback(bg.onNotificationReceived);
       }
     } catch (e) {
       debugPrint("Error initializing notification listener: $e");
@@ -100,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openNotificationSettings() async {
-    await FlutterNotificationListener.openPermissionSettings();
+    await fnl.FlutterNotificationListener.openPermissionSettings();
   }
 
   @override
